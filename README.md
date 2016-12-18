@@ -107,10 +107,20 @@ $ nu path/to/bin/nu | grep -C 15 '^[[:space:]]*100\>'
 ### Q: Why do we need a new tool to number lines? Can't the same thing be achieved with nl(1)?
 
 **A:** The `'nu'` tool actually uses the `nl(1)` internally to obtain the line
-numbering. The `'nul'` tool was motivated by the author spending time
+numbering. The `'nu'` tool was motivated by the author spending time
 repeatedly futzing with long command lines to obtain the output in the format
 produced by '`nu`'. The `'nu'` program is simply a wrapper script optimized
 for the author's common case scenario.
+
+### Q: Why is the program named 'nu'?
+
+**A:** It is a mnemonic for the command `':set nu'` used to turn on line numbering in the [vi(1) editor][VI] and many of its clones.
+
+There is also precedent for this naming approach in related tools. For
+example, amongst the [many ways][EMACS_LINENUM] to display line numbers within
+[emacs][EMACS] there is the similarly named [setnu-mode][SETNU_EL] (and its
+cousin [setnu+-mode][SETNU_PLUS_EL]), names also derived from the same vi
+command.
 
 
 ## Copyright (Copyleft)
@@ -192,5 +202,9 @@ Copyright (C) 2016 Alan D. Salewski <salewski@att.net>
 
 [COPYING]:       https://github.com/salewski/nu/blob/master/COPYING
 
-[VI]:            https://github.com/salewski/nu.git
+[EMACS]:         https://www.gnu.org/software/emacs/
+[EMACS_LINENUM]: https://www.emacswiki.org/emacs/LineNumbers
+[SETNU_EL]:      https://www.emacswiki.org/emacs/setnu.el
+[SETNU_PLUS_EL]: https://www.emacswiki.org/emacs/setnu+.el
+[VI]:            https://en.wikipedia.org/wiki/Vi
 [GNU_COREUTILS]: https://www.gnu.org/software/coreutils/coreutils.html
