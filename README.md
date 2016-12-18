@@ -4,7 +4,7 @@ This is the README.md file for the `'nu'` project.
 
 The 'nu' project provides the nu(1) program that emits content with numbered
 lines on your console in a style modeled after that produced by the `'set nu'`
-command in the [vi(1) editor][VI] and many of its clones.
+command in the [vi(1) editor][VI_WIKIPEDIA] and many of its clones.
 
 This project is just being created (2016-12-18); proper documentation does not
 yet exist but hopefully will soon. For now, just copy the 'nu' script onto
@@ -104,7 +104,7 @@ $ nu path/to/bin/nu | grep -C 15 '^[[:space:]]*100\>'
 
 ## FAQ
 
-### Q: Why do we need a new tool to number lines? Can't the same thing be achieved with nl(1)?
+### Q: Why do we need a new tool to number lines? Can't the same thing be achieved with [nl(1)][NL_WIKIPEDIA]?
 
 **A:** The `'nu'` tool actually uses the `nl(1)` internally to obtain the line
 numbering. The `'nu'` tool was motivated by the author spending time
@@ -114,7 +114,7 @@ for the author's common case scenario.
 
 ### Q: Why is the program named 'nu'?
 
-**A:** It is a mnemonic for the command `':set nu'` used to turn on line numbering in the [vi(1) editor][VI] and many of its clones.
+**A:** It is a mnemonic for the command `':set nu'` used to turn on line numbering in the [vi(1) editor][VI_WIKIPEDIA] and many of its clones.
 
 There is also precedent for this naming approach in related tools. For
 example, amongst the [many ways][EMACS_LINENUM] to display line numbers within
@@ -204,7 +204,8 @@ Copyright (C) 2016 Alan D. Salewski <salewski@att.net>
 
 [EMACS]:         https://www.gnu.org/software/emacs/
 [EMACS_LINENUM]: https://www.emacswiki.org/emacs/LineNumbers
+[NL_WIKIPEDIA]:  https://en.wikipedia.org/wiki/Nl_(Unix)
 [SETNU_EL]:      https://www.emacswiki.org/emacs/setnu.el
 [SETNU_PLUS_EL]: https://www.emacswiki.org/emacs/setnu+.el
-[VI]:            https://en.wikipedia.org/wiki/Vi
+[VI_WIKIPEDIA]:  https://en.wikipedia.org/wiki/Vi
 [GNU_COREUTILS]: https://www.gnu.org/software/coreutils/coreutils.html
