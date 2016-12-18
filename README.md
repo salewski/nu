@@ -61,9 +61,10 @@ $ nu path/to/bin/nu | tail -n 30
 
 The line numbers are prepended unconditionally to every line of input, and are
 emitted right-aligned in a field just wide enough for the largest line number
-to be displayed. Another example showing the numbering where is crosses from
-lines with 2-digit line numbers to lines with 3-digit line numbers illustrates
-the point:
+to be displayed. Another example illustrates the point, showing the numbering
+where it crosses from lines with 2-digit line numbers to lines with 3-digit
+line numbers:
+
 
 ``` bash
 $ nu path/to/bin/nu | grep -C 15 '^[[:space:]]*100\>'
