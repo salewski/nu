@@ -1,0 +1,392 @@
+#!/bin/bash -
+#
+# Copyright (C) 2016 Alan D. Salewski <salewski@att.net>
+#
+#    This program is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License along
+#    with this program; if not, write to the Free Software Foundation, Inc.,
+#    51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+#
+#
+# nu: number input lines, emitting them to stdout. Output is modeled on that
+# of the 'set nu' command in the vi(1) editor (and many of its clones). That is,
+# in the form:
+#
+#     <zero-or-more-leading-spaces><line_number, right_aligned><single_space><line_content>
+#
+# The line number field will only be as wide as necessary to display the
+# highest line number; this behavior is a modification of what you can obtain
+# directly from nl(1) because that program assumes a field width (or requires
+# the user to explicitly set it to some other value, which the user may not
+# know in advance).
+#
+# Internally nl(1) is still used to do the line numbering, but the data a
+# streamed to a temporary file first to allow the current program to determine
+# the highest line number (and hence determine the number of character columns
+# needed to display it). This behavior means that 'nu' will always be slower
+# than 'nl', but for small to moderate sized files the difference should be
+# insignificant for interactive use.
+#
+# CAVEATS:
+#
+#     * Uses 'nl' to number the lines, which means we inherit any of its
+#       limitations and incur its overhead. The author is not aware of any
+#       fundamental problems with this, but the decision may be revisited in
+#       the future.
+#
+# TODO:
+#
+#     * Project build based on GNU autotools
+#       - find needed tools at configure time and filter their locations into the script
+#       - generate man page from POD and install it
+#       - filter project metadata into script (maintainer, version number, etc)
+#
+#     * Documentation (man page)
+#
+#     * Add color support (e.g., show line numbers in "dimmed" color)
+#
+
+declare -r PROG='nu'
+
+declare -r COPYRIGHT_DATES='2016'
+
+# FIXME: one day this will be filtered in at build time
+#declare -r gl_maintainer_addr='@DFLT_MAINTAINER@'  # filtered in at build time
+declare -r gl_maintainer_addr='Alan D. Salewski <salewski@att.net>'
+
+# # This variable is replaced by the current nu project version number at build
+# # time.
+# declare -r NU_PROJECT_VERSION='@VERSION@'
+# FIXME: one day this will be filtered in at build time
+declare -r VERSION='0.0.1'
+
+
+# # This variable is replaced at build time
+# declare -r gl_const_build_date='@BUILD_DATE@'
+# declare -r gl_const_release="${NU_PROJECT_VERSION}  (built: ${gl_const_build_date})"
+# FIXME: one day this will be filtered in at build time
+# declare -r gl_const_release="${VERSION}  (built: ${gl_const_build_date})"
+declare -r gl_const_release="${VERSION}"
+
+
+# FIXME: There currently is no "configure time"...
+#
+# By default we'll use the external programs found at configure-time (values
+# are filtered-in here at build time). But we allow the user to override any
+# particular tool by setting an environment variable named after the tool
+# (with hyphen chars changed to underscores).
+
+#declare -r AWK_PROG="${AWK:-@AWK@}"  # 'awk' command found at configure time 
+declare -r AWK_PROG="${AWK:-awk}"  # 'awk' command, first found on $PATH
+
+# declare -r CAT_PROG="${CAT:-@CAT@}"
+declare -r CAT_PROG="${CAT:-cat}"
+
+#declare -r MKTEMP_PROG="${MKTEMP:-@MKTEMP@}"  # 'mktemp' command found at configure time 
+declare -r MKTEMP_PROG="${MKTEMP:-mktemp}"  # 'mktemp' command, first found on $PATH
+
+#declare -r NL_PROG="${NL:-@NL@}"  # GNU 'nl' command (from GNU coreutils) found at configure time 
+declare -r NL_PROG="${NL:-nl}"  # GNU 'nl' command (from GNU coreutils), first found on $PATH
+
+#declare -r RM_PROG="${RM:-@RM@}"  # 'rm' command found at configure time 
+declare -r RM_PROG="${RM:-rm}"  # 'rm' command, first found on $PATH
+
+#declare -r RMDIR_PROG="${RMDIR:-@RMDIR@}"  # 'rmdir' command found at configure time 
+declare -r RMDIR_PROG="${RMDIR:-rmdir}"  # 'rmdir' command, first found on $PATH
+
+#declare -r SED_PROG="${SED:-@SED@}"  # 'sed' command found at configure time 
+declare -r SED_PROG="${SED:-sed}"  # 'sed' command, first found on $PATH
+
+#declare -r TAIL_PROG="${TAIL:-@TAIL@}"  # 'tail' command found at configure time 
+declare -r TAIL_PROG="${TAIL:-tail}"  # 'tail' command, first found on $PATH
+
+
+BE_VERBOSE=false
+
+
+declare -a F_CLEANUP_HOOK_NAMES=()
+
+function f_add_cleanup_hook_name () {
+    F_CLEANUP_HOOK_NAMES+=( $1 );
+}
+
+
+function f_cleanup () {
+
+    if test ${#F_CLEANUP_HOOK_NAMES[@]} -eq 0; then
+        # No cleanup hooks, so nothing to do
+        return
+    fi
+
+    local cleanup_hook
+    local idx
+
+    let idx=${#F_CLEANUP_HOOK_NAMES[@]}-1
+
+    # Note that we're running the cleanup hooks in opposite order from which
+    # they were installed.
+    #
+    while test $idx -ge 0; do
+
+        cleanup_hook=${F_CLEANUP_HOOK_NAMES[$idx]}
+
+        if $BE_VERBOSE; then
+            printf "${PROG} (info): running cleanup hook: [%s]\n" "${cleanup_hook}" 1>&2
+        fi
+
+        test -n "$cleanup_hook" && eval "$cleanup_hook"
+
+        let idx=$idx-1
+    done
+}
+
+function f_cleanup_and_die () {
+    f_cleanup
+    exit 1
+}
+
+trap 'printf "$PROG (warn): HUP signal caught; bailing out\n"  1>&2; f_cleanup_and_die' HUP
+trap 'printf "$PROG (warn): INT signal caught; bailing out\n"  1>&2; f_cleanup_and_die' INT
+trap 'printf "$PROG (warn): QUIT signal caught; bailing out\n" 1>&2; f_cleanup_and_die' QUIT
+trap 'printf "$PROG (warn): TERM signal caught; bailing out\n" 1>&2; f_cleanup_and_die' TERM
+
+trap 'f_cleanup' EXIT
+
+
+
+f_print_help () {
+
+    "${CAT_PROG}" <<EOF
+usage: $PROG [OPTION...] [FILE...]
+
+Number input lines, emitting them to stdout. Output is modeled on that
+of the 'set nu' command in the vi(1) editor (and many of its clones).
+
+Mandatory arguments to long options are mandatory for short options too.
+
+  -h, --help      Print this help message on stdout
+  -V, --version   Print the version of the program on stdout
+  -v, --verbose   Tell what is being done. Two or more -v options turns on tracing (set -x)
+      --          Signals the end of options and disables further options processing.
+
+Report bugs to ${gl_maintainer_addr}
+EOF
+}
+
+f_print_version () {
+    "${CAT_PROG}" <<EOF
+${PROG} ${gl_const_release}
+
+Copyright (C) ${COPYRIGHT_DATES} Alan D. Salewski <salewski@att.net>
+License GPLv2+: GNU GPL version 2 or later <http://gnu.org/licenses/gpl.html>.
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+
+Written by Alan D. Salewski.
+EOF
+}
+
+
+while test $# -gt 0 ; do
+
+    option=$(expr "x$1" : 'x\(--[^=]*\)' \| \
+                  "x$1" : 'x\(-.\)'      \| \
+                  "x$1" : 'x\(.*\)')
+
+    optarg=$(expr "x$1" : 'x--[^=]*=\(.*\)' \| \
+                  "x$1" : 'x-.\(.*\)')
+
+    case $1 in
+
+        --help | -h )
+            # print help message
+            f_print_help
+            exit 0
+            ;;
+
+        --version | -V )
+            # print program version info
+            f_print_version
+            exit 0
+            ;;
+
+        --verbose | -v )
+            # Accumulating 'verbose' opt. A single -v opt simply turns
+            # BE_VERBOSE on; two or more '-v' opts turns tracing on. Note that
+            # if you intend to turn tracing on, you'll probably want your -v
+            # opts to be the first opts on the command line (so they take
+            # effect earlier).
+            if $BE_VERBOSE; then
+                # We've seen at least one -v opt before, so now we're turning tracing on
+                set -x
+            else
+                # First -v opt we're seeing
+                BE_VERBOSE=true
+            fi
+            shift
+            ;;
+
+        -- ) # Stop option processing
+            shift
+            break
+            ;;
+
+        --* | -* )
+            # Unrecognized option
+            printf "${PROG} (error): unrecognized option \`%s'\n" "$option" 1>&2
+            f_print_help 1>&2
+            exit 1
+            ;;
+
+        * ) # Unrecognized non-option
+
+            # We'll treat the first non-option and all remaining arguments as
+            # names of files to process; note that we DO NOT shift off the
+            # first, but merely stop processing command line options when we
+            # see it.
+            break
+            ;;
+    esac
+done
+
+# Any/all remaining arguments are interpreted as the names of files to process.
+
+# If the user did not provide any files on the command line, then we'll use
+# the pseudo file name '-' to cause the downstream processing to read from
+# stdin.
+#
+if test $# -eq 0; then
+    set -- '-'
+fi
+
+
+MY_TMPDIR=$("${MKTEMP_PROG}" --directory --tmpdir "${PROG}"'.XXXXXXXX')
+test $? -ne 0 && {
+    printf "${PROG} (error): was unable to create temporary directory; bailing out\n" 1>&2
+    exit 1
+}
+
+function f_cleanup_hook_remove_tmpdir () {
+    "${RMDIR_PROG}" "${MY_TMPDIR}" || {
+        printf "${PROG} (warn): was unable to remove temporary directory %s\n" "${MY_TMPDIR}" 1>&2
+        # This is a cleanup hook, so we keep going to allow other cleanup
+        # hooks (if any) to run
+    }
+}
+
+f_add_cleanup_hook_name 'f_cleanup_hook_remove_tmpdir'
+
+
+# We'll stream the output of the nl(1) command to this file, with each line
+# (intentionally) prefixed with unwanted whitespace (presumably; won't be true
+# for output of a billion lines or more). We will then calculate the number of
+# digits needed to display the highest line number, and then spit our spooled
+# content back out in a nicely formatted way with the unwanted prefixed
+# whitespace sliced off.
+TDIR_SPOOL_FPATH="${MY_TMPDIR}/tspool"
+COLS_CNT=0
+
+function f_cleanup_hook_remove_tspool_file () {
+    "${RM_PROG}" "${TDIR_SPOOL_FPATH}" || {
+        printf "${PROG} (warn): was unable to remove tmp file %s\n" "${TDIR_SPOOL_FPATH}" 1>&2
+        # This is a cleanup hook, so we keep going to allow other cleanup
+        # hooks (if any) to run
+    }
+}
+
+f_add_cleanup_hook_name 'f_cleanup_hook_remove_tspool_file'
+
+
+# XXX: Hard-coded max width is crap, but good enough for the common case. Patches welcome.
+#
+# # DEBUG go
+# # This makes testing the pathological scnearios faster & easier.
+# max_field_width=1
+# # DEBUG end
+max_field_width=9
+
+
+# Here's where the action starts...
+declare -a MY_NL_OPTS=()
+
+# We want every input line numbered (the default behavior of nl(1) is to
+# number only non-empty lines).
+MY_NL_OPTS+=( '-ba' )
+
+# Avoid resetting line numbers at logical pages
+MY_NL_OPTS+=( '-p' )
+
+# Format of line numbers should be right aligned, with no leading zeros
+MY_NL_OPTS+=( '-n' )
+MY_NL_OPTS+=( 'rn' )
+
+# The separator (a single ASCII character) to use between the line number and
+# the text content. We use this to make the output layout
+# predicatable. Without this, processing of lines with leading whitespace
+# would be trickier.
+MY_NL_OPTS+=( '-s' )
+MY_NL_OPTS+=( ' '  )
+
+# This may be overkill, but using a nine-column wide field for the line
+# numbers means we won't run into any formatting weirdness until the billionth
+# line (which is well beyond our intended use case).
+MY_NL_OPTS+=( '-w' )
+MY_NL_OPTS+=( $max_field_width )
+
+"${NL_PROG}" "${MY_NL_OPTS[@]}" "$@" > "${TDIR_SPOOL_FPATH}"
+if test $? -ne 0; then
+    printf "${PROG} (error): was unable to spool output to temporary file \"%s\"; bailing out\n" "${TDIR_SPOOL_FPATH}" 1>&2
+    exit 1
+fi
+
+t_last_line_number=$("${TAIL_PROG}" -n 1 "${TDIR_SPOOL_FPATH}" | "${AWK_PROG}" '{ print $1 }' )
+if test $? -ne 0; then
+    printf "${PROG} (error): was unable to obtain line number from last line of temporary file \"%s\"; bailing out\n" "${TDIR_SPOOL_FPATH}" 1>&2
+    exit 1
+fi
+
+declare -r t_re_all_digits='^[[:digit:]]{1,}$'
+if [[ $t_last_line_number =~ $t_re_all_digits ]]; then :; else
+    printf "${PROG} (error): line number (\"%s\") obtained from last line of temporary file \"%s\" is not an integer; bailing out\n" "${t_last_line_number}" "${TDIR_SPOOL_FPATH}" 1>&2
+    exit 1
+fi
+
+t_last_line_number_digit_count=${#t_last_line_number}
+
+if test $t_last_line_number_digit_count -ge $max_field_width; then
+
+    # No reason to do anything else; our processing here would not be adding
+    # anything useful to the default produced by nl(1), so we'll just show it
+    # directly.
+    #
+    # Note that if we're falling through here, the output is still predictable
+    # (should not break downstream tools attempting to parse it) but will not
+    # be nicely formatted for display beyond the billionth line.
+    #
+    "${CAT_PROG}" "${TDIR_SPOOL_FPATH}"
+    if test $? -ne 0; then
+        printf "${PROG} (error): was unable to read spooled output from temporary file \"%s\"; bailing out\n" "${TDIR_SPOOL_FPATH}" 1>&2
+        exit 1
+    fi
+
+    exit 0
+fi
+
+t_slice_off_cnt=$(( $max_field_width - $t_last_line_number_digit_count ))
+"${CAT_PROG}" "${TDIR_SPOOL_FPATH}" \
+| "${SED_PROG}" -e 's#^[[:space:]]\{0,'"${t_slice_off_cnt}"'\}##'
+if test $? -ne 0; then
+    printf "${PROG} (error): was failure while processing spooled output from temporary file \"%s\"; bailing out\n" "${TDIR_SPOOL_FPATH}" 1>&2
+    exit 1
+fi
+
+exit 0
