@@ -101,6 +101,8 @@ $ nu path/to/bin/nu | grep -C 15 '^[[:space:]]*100\>'
 115 
 ```
 
+See the [BUGS] file for information on reporting bugs.
+
 
 ## FAQ
 
